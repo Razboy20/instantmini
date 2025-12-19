@@ -8,6 +8,7 @@
 #import <mach/mach_vm.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
+#import <objc/runtime.h>
 #import <libkern/OSCacheControl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -46,7 +47,7 @@ typedef struct {
 // ============================================================================
 
 // Spaces: patch fmov d0, #0.5 instruction at match start
-// Minimize: patch fmov s8/s0 instruction at specified offset
+// Minimize-to-app: patch the d8 duration assignment at offset 4
 //
 // os_min/os_max define version range (inclusive). Use 0 for unbounded.
 // Examples: {.os_min=14, .os_max=14} = Sonoma only
@@ -72,23 +73,43 @@ static PatternSpec g_patterns[] = {
         .os_min       = OS_SEQUOIA,
         .os_max       = 0,
     },
-    // Minimize - all versions
+    // ========================================================================
+    // Minimize-to-app-icon: zero the per-effect animation duration
+    // ========================================================================
+    // With "Minimize windows into application icon" enabled, the Dock bypasses
+    // effectDur and animates in a separate minimize/unminimize function pair.
+    // Each effect hardcodes its duration into d8, then moves it into d0
+    // (fmov d0, d8 on Sequoia; mov v0.16b, v8.16b on Golden Gate) and calls the global
+    // animation duration setter. d8 is reused for prepareWindowForMinMax:duration:,
+    // so we patch the d8 assignment itself. Each pattern matches twice
+    // (minimize + unminimize).
+    //
+    // Genie: fcsel s0, s0, s1, ne; fcvt d8, s0 (genie-speed pref, default 0.5)
     {
-        .pattern      = "E1 87 00 AD 08 1C 28 1E",
-        .patch_offset = 4,
-        .name         = "minimize",
-        .feature      = FEATURE_MINIMIZE,
-        .os_min       = 0,
-        .os_max       = 0,
+        .pattern       = "00 1C 21 1E 08 C0 22 1E ?? ?? ?? ?? ?? ?? ?? 97",
+        .patch_offset  = 4,
+        .name          = "minimize-to-app-genie",
+        .feature       = FEATURE_MINIMIZE,
+        .os_min        = 0,
+        .os_max        = 0,
     },
-    // Unminimize - all versions
+    // Scale: fmov d1, #0.25; fcsel d8, d1, d0, ne
     {
-        .pattern      = "08 0D 20 1E 00 E4 00 6F E0 83 01 AD",
-        .patch_offset = 0,
-        .name         = "maximize",
-        .feature      = FEATURE_MINIMIZE,
-        .os_min       = 0,
-        .os_max       = 0,
+        .pattern       = "01 10 6A 1E 28 1C 60 1E ?? ?? ?? ?? ?? ?? ?? 97",
+        .patch_offset  = 4,
+        .name          = "minimize-to-app-scale",
+        .feature       = FEATURE_MINIMIZE,
+        .os_min        = 0,
+        .os_max        = 0,
+    },
+    // Suck: fmov d1, #4.0; fcsel d8, d0, d1, ne (d0 = 0.4)
+    {
+        .pattern       = "01 10 62 1E 08 1C 61 1E ?? ?? ?? ?? ?? ?? ?? 97",
+        .patch_offset  = 4,
+        .name          = "minimize-to-app-suck",
+        .feature       = FEATURE_MINIMIZE,
+        .os_min        = 0,
+        .os_max        = 0,
     },
 };
 
@@ -191,7 +212,7 @@ static const char *features_str(FeatureFlags f) {
 
 // Returns replacement instruction for the given register
 // Mode: "zero" = movi #0, "min0125" = fmov #0.125
-static uint32_t get_patch_instruction(unsigned int reg) {
+static uint32_t get_fmov_instruction(unsigned int reg) {
     if (reg > 31) {
         log_line("Invalid register number %u (must be 0-31)", reg);
         reg = 0;
@@ -201,6 +222,12 @@ static uint32_t get_patch_instruction(unsigned int reg) {
     uint32_t base = use_min0125 ? 0x1e681000u   // fmov d_, #0.125
                                 : 0x2f00e400u;  // movi d_, #0
     return base | reg;
+}
+
+// FMOV/MOVI d-register encoding: destination reg is in bits 0-4
+static uint32_t get_patch_instruction(uint64_t patch_addr) {
+    uint32_t orig = *(volatile uint32_t *)patch_addr;
+    return get_fmov_instruction(orig & 0x1f);
 }
 
 // ============================================================================
@@ -358,10 +385,6 @@ static int apply_pattern(PatternSpec *spec, uint64_t text_start, uint64_t text_s
     size_t pattern_len = parse_pattern(spec->pattern, pattern_bytes, pattern_mask, sizeof(pattern_bytes));
     if (pattern_len == 0) return 0;
 
-    // Spaces patches d0, minimize patches d8
-    int reg = (spec->feature & FEATURE_MINIMIZE) ? 8 : 0;
-    uint32_t replacement = get_patch_instruction(reg);
-
     int patched = 0;
     size_t search_offset = 0;
 
@@ -375,7 +398,7 @@ static int apply_pattern(PatternSpec *spec, uint64_t text_start, uint64_t text_s
 
         if (!make_writable(patch_addr)) break;
 
-        write_instruction(patch_addr, replacement);
+        write_instruction(patch_addr, get_patch_instruction(patch_addr));
         make_executable(patch_addr);
 
         uint32_t after = *(volatile uint32_t *)patch_addr;
@@ -391,6 +414,47 @@ static int apply_pattern(PatternSpec *spec, uint64_t text_start, uint64_t text_s
         search_offset = match + 1;
     }
     return patched;
+}
+
+static float effect_dur(id self, SEL _cmd) {
+    return strcmp(g_mode, "min0125") == 0 ? 0.125f : 0.0f;
+}
+
+// prepareWindowForMinMax adds the window to a temporary "min-max-space" and destroys that
+// space after `duration`. With a zeroed duration the destroy races the window ordering on
+// Dock's animation queue, stranding the window in a dead space (invisible after relaunch).
+#define MIN_MAX_SPACE_MIN_LIFETIME 0.25
+
+typedef void (*PrepareMinMaxIMP)(id, SEL, uint32_t, double);
+static PrepareMinMaxIMP g_orig_prepare_min_max;
+
+static void prepare_window_for_min_max(id self, SEL _cmd, uint32_t wid, double duration) {
+    g_orig_prepare_min_max(self, _cmd, wid, fmax(duration, MIN_MAX_SPACE_MIN_LIFETIME));
+}
+
+// Swizzling avoids build-specific bytes. *orig is stored before the swap so imp can call it
+// immediately. Returns NO if the method is missing or already swizzled.
+static BOOL swizzle(const char *cls, const char *sel, IMP imp, IMP *orig) {
+    Method m = class_getInstanceMethod(objc_getClass(cls), sel_registerName(sel));
+    if (!m || method_getImplementation(m) == imp) return NO;
+    if (orig) *orig = method_getImplementation(m);
+    method_setImplementation(m, imp);
+    return YES;
+}
+
+// -[DockBar effectDur] feeds the non-to-app min/max durations
+static int patch_min_max_methods(void) {
+    int count = 0;
+    if (swizzle("DockBar", "effectDur", (IMP)effect_dur, NULL)) {
+        log_line("[effectDur] swizzled -[DockBar effectDur]");
+        count++;
+    }
+    if (swizzle("Spaces", "prepareWindowForMinMax:duration:", (IMP)prepare_window_for_min_max,
+                (IMP *)&g_orig_prepare_min_max)) {
+        log_line("[min-max-space] swizzled -[Spaces prepareWindowForMinMax:duration:]");
+        count++;
+    }
+    return count;
 }
 
 // Apply all applicable patterns for current OS
@@ -416,6 +480,12 @@ static int patch_dock_text(uint64_t text_start, uint64_t text_size) {
             log_line("[%s] %d match(es)", spec->name, count);
             total += count;
         }
+    }
+
+    if (enabled & FEATURE_MINIMIZE) {
+        int count = patch_min_max_methods();
+        minimize_count += count;
+        total += count;
     }
 
     log_line("Patched: spaces=%d, minimize=%d", spaces_count, minimize_count);

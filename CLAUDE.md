@@ -69,12 +69,27 @@ Each `PatternSpec` contains:
 - `00 10 6A 1E E0 03 14 AA ...` - Sonoma primary, Sequoia fallback
 - `00 10 6A 1E A8 ?? ?? D1 ...` - Sequoia primary, Sonoma fallback
 
-**Minimize patterns** (patch at offset 4 - second instruction):
-- `28 1C 60 1E 00 41 60 1E` - Scale mode (`OS_ANY`)
-- `08 1C 61 1E 00 41 60 1E` - Shrink mode (`OS_ANY`)
-- TODO: Genie mode
+**Minimize patterns** (macOS 15 and 27, both arm64e and arm64e.x1 slices):
 
-Each minimize pattern appears twice in Dock (minimize + unminimize logic).
+`bl`/`adrp` immediates shift between Dock builds, so they are always wildcarded.
+- `-[DockBar effectDur]` is swizzled via the ObjC runtime to return the mode's duration (no byte pattern)
+- `-[Spaces prepareWindowForMinMax:duration:]` is swizzled to floor `duration` at 0.25s. It adds the
+  window to a temporary "min-max-space" and destroys it after `duration`; destroying it immediately
+  races Dock's window ordering and strands the window (invisible after app relaunch).
+- Never skip the animated min/max branches: they set `transactionID` (reply to the app),
+  pair `beginMinMax`/`endMinMax`, and call `prepareWindowForMinMax` (adds the window to the
+  current Space). Skipping them leaves unminimized windows invisible. Only shorten durations.
+
+**Minimize-to-app-icon patterns** (patch at offset 4 - the `d8` duration assignment):
+
+With "Minimize windows into application icon" enabled, Dock bypasses `effectDur` and
+hardcodes a per-effect duration into `d8`, then moves it to `d0` (`fmov d0, d8` on 15,
+`mov v0.16b, v8.16b` on 27) before calling the global animation-duration setter.
+- `00 1C 21 1E 08 C0 22 1E ?? ?? ?? ?? ?? ?? ?? 97` - Genie (`genie-speed` pref, default 0.5s)
+- `01 10 6A 1E 28 1C 60 1E ?? ?? ?? ?? ?? ?? ?? 97` - Scale (0.25s)
+- `01 10 62 1E 08 1C 61 1E ?? ?? ?? ?? ?? ?? ?? 97` - Suck (0.4s)
+
+Each minimize-to-app pattern appears twice in Dock (minimize + unminimize logic).
 
 ### Environment Variables
 

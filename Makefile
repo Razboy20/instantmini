@@ -42,7 +42,9 @@ payload.dylib: src/payload.m
 loader: src/loader.m
 	$(CC) $(CFLAGS) $(FRAMEWORKS) $< -o $@
 	# codesign -fs "-" $@
-	# pain and suffering; Mach-O caps (check in otool -h) must be 0x80, however recent versions of clang build with 0x81.
+	# pain and suffering; The arm64e ptr_auth version must match that of the dock (0x80), however, clang builds with 0x81.
+	# how ptr_auth is defined: https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/osfmk/mach/machine.h#L387
+	# Is apple shipping a version of clang with this changed? https://github.com/llvm/llvm-project/blob/b290a3e12bbda9d6c06c88bab391df70249e7071/llvm/lib/MC/MachObjectWriter.cpp#L194-L197
 	printf '\x80' | dd of=loader bs=1 seek=11 count=1 conv=notrunc
 
 # =============================================================================
