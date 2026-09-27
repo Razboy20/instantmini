@@ -7,37 +7,35 @@
 
     <key>ProgramArguments</key>
     <array>
-      <string>/Users/flawn/Documents/Projects/instantmini/scripts/auto-inject.sh</string>
-      <string>min0125</string>
+      <string>/Library/ScriptingAdditions/instantmini.osax/Contents/Resources/auto-inject.sh</string>
+      <string>zero</string>
+      <string>all</string>
     </array>
 
-    <!-- [AI] Run when loaded (login) and only keep alive on failure (so success exits cleanly) -->
-    <key>RunAtLoad</key><true/>
+    <key>RunAtLoad</key>
+    <true/>
+
     <key>KeepAlive</key>
     <dict>
       <key>SuccessfulExit</key>
       <false/>
     </dict>
 
-    <!-- Ensure login session -->
     <key>LimitLoadToSessionType</key>
     <string>Aqua</string>
 
-    <!-- Environment PATH for lldb -->
     <key>EnvironmentVariables</key>
     <dict>
       <key>PATH</key>
       <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
-    <!-- Optional: throttle restarts in case of rapid failures -->
     <key>ThrottleInterval</key>
     <integer>5</integer>
 
-    <!-- [AI] Optional: log paths for debugging -->
     <key>StandardOutPath</key>
-    <string>/Users/flawn/Library/Logs/instantmini.auto-inject.out.log</string>
+    <string>/tmp/instantmini.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/flawn/Library/Logs/instantmini.auto-inject.err.log</string>
+    <string>/tmp/instantmini.err.log</string>
   </dict>
 </plist>

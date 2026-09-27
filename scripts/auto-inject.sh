@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Config: choose your default mode (zero|min0125)
-MODE="${1:-min0125}"
+# Auto-inject script for LaunchAgent
+# Usage: auto-inject.sh [MODE] [FEATURES]
 
-PAYLOAD="/Library/ScriptingAdditions/instantmini.osax/Contents/Resources/payload.dylib"
+MODE="${1:-zero}"
+FEATURES="${2:-all}"
 
-# Set a custom process title so it is easy to find/kill via pgrep/pkill
-if command -v exec -a >/dev/null 2>&1; then
-  : # exec -a supported by bash builtin when used on invocation; noop here
-fi
+OSAX_DIR="/Library/ScriptingAdditions/instantmini.osax/Contents"
+LOADER="${OSAX_DIR}/MacOS/loader"
+PAYLOAD="${OSAX_DIR}/Resources/payload.dylib"
 
 # Wait for Dock to appear
-for i in {1..30}; do
+for _ in {1..30}; do
   if pgrep -x Dock >/dev/null 2>&1; then
     break
   fi
@@ -25,25 +25,38 @@ if [[ -z "${PID}" ]]; then
   exit 75  # temporary failure so launchd can retry
 fi
 
-# Try injection a few times (works around occasional attach/transient hiccups)
+# Check if arm64e_preview_abi boot-arg is set
+use_loader=false
+if nvram boot-args 2>/dev/null | grep -q "arm64e_preview_abi"; then
+  if [[ -x "${LOADER}" ]]; then
+    use_loader=true
+  fi
+fi
+
+# Try injection with retry
 tries=2
 for attempt in $(seq 1 $tries); do
-  echo "auto-inject attempt $attempt/$tries (mode=$MODE)"
-  /usr/bin/lldb -p "${PID}" -b \
-    -o 'settings set target.process.thread.step-out-avoid-nodebug true' \
-    -o "expr (int)setenv(\"INSTANTMINI_MODE\",\"$MODE\",1)" \
-    -o "expr (void*)dlopen(\"$PAYLOAD\", 2)" \
-    -o 'expr (char*)dlerror()' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantmini_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantmini_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *vs = my_dlsym((void*)-2,"instantmini_verify"); (int)((vs)?((int(*)(void))vs)():-1); }' \
-    -o 'process detach' \
-    -o 'quit' && {
-      echo "auto-inject success"
+  echo "auto-inject attempt $attempt/$tries (mode=$MODE, features=$FEATURES)"
+
+  if [[ "${use_loader}" == "true" ]]; then
+    if "${LOADER}" -m "$MODE" -f "$FEATURES" "${PAYLOAD}"; then
+      echo "auto-inject success (loader)"
       exit 0
-    }
+    fi
+  else
+    if /usr/bin/lldb -p "${PID}" -b \
+      -o "expr (int)setenv(\"INSTANTMINI_MODE\",\"${MODE}\",1)" \
+      -o "expr (int)setenv(\"INSTANTMINI_FEATURES\",\"${FEATURES}\",1)" \
+      -o "expr (void*)dlopen(\"${PAYLOAD}\", 2)" \
+      -o 'process detach' \
+      -o 'quit' 2>/dev/null; then
+      echo "auto-inject success (lldb)"
+      exit 0
+    fi
+  fi
+
   sleep 2
 done
 
-echo "auto-inject failed after $tries attempts (mode=$MODE)"
-exit 75  # temporary failure; launchd will retry per KeepAlive/ThrottleInterval
+echo "auto-inject failed after $tries attempts"
+exit 75
