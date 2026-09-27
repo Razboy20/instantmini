@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 instantspaces patches the macOS Dock in-process to reduce animation durations for:
 - **Spaces switching** - Desktop/Space transitions
-- **Window minimize/unminimize** - Scale and Shrink minimize effects
+- **Window minimize/unminimize** - Genie, Scale and Suck effects, including "Minimize windows into application icon"
 
 Uses LLDB to inject a scripting addition payload that patches ARM64 instructions controlling animation timing.
 
-**Requirements:** SIP disabled, Xcode Command Line Tools, Apple Silicon (arm64e), macOS 14+ (Sonoma/Sequoia)
+**Requirements:** SIP disabled, Xcode Command Line Tools, Apple Silicon (arm64e), macOS 14+ (Sonoma, Sequoia, Golden Gate)
 
 ## Build Commands
 
@@ -39,7 +39,7 @@ sudo ./scripts/inject.sh min0125 minimize # Only minimize animations
 ```
 src/payload.m           # Objective-C payload injected into Dock
 ├── PatternSpec         # Struct: pattern, patch_offset, name, feature flags
-├── g_all_patterns[]    # All patterns with metadata
+├── g_patterns[]        # All patterns with metadata
 ├── instantspaces_patch()   # Main export: pattern-match and patch
 ├── instantspaces_verify()  # Verifies patches were applied
 └── constructor (ctor)      # Auto-runs patch on dylib load
@@ -58,18 +58,16 @@ Each `PatternSpec` contains:
 - `patch_offset`: Byte offset within match to apply patch (0 for spaces, 4 for minimize)
 - `name`: Descriptive name for logging
 - `feature`: `FEATURE_SPACES` or `FEATURE_MINIMIZE`
-- `os_target`: Primary OS version (`OS_SONOMA`, `OS_SEQUOIA`, or `OS_ANY`)
-- `os_fallback`: Fallback OS to try if primary finds nothing
+- `os_min` / `os_max`: Inclusive macOS major version range (`0` = unbounded)
 
-**Two-pass matching:**
-1. **Primary pass**: Try patterns where `os_target` matches current OS (or `OS_ANY`)
-2. **Fallback pass**: If a feature found no matches, try patterns where `os_fallback` matches current OS
+Every pattern whose feature is enabled and whose version range contains the current OS is applied
+to all of its matches.
 
 **Spaces patterns** (patch at offset 0 - first instruction):
-- `00 10 6A 1E E0 03 14 AA ...` - Sonoma primary, Sequoia fallback
-- `00 10 6A 1E A8 ?? ?? D1 ...` - Sequoia primary, Sonoma fallback
+- `00 10 6A 1E E0 03 14 AA ...` - Sonoma only
+- `00 10 6A 1E A8 ?? ?? D1 ...` - Sequoia and later
 
-**Minimize patterns** (macOS 15 and 27, both arm64e and arm64e.x1 slices):
+**Minimize patterns** (macOS 15 Sequoia and 27 Golden Gate, both arm64e and arm64e.x1 slices):
 
 `bl`/`adrp` immediates shift between Dock builds, so they are always wildcarded.
 - `-[DockBar effectDur]` is swizzled via the ObjC runtime to return the mode's duration (no byte pattern)
@@ -83,8 +81,8 @@ Each `PatternSpec` contains:
 **Minimize-to-app-icon patterns** (patch at offset 4 - the `d8` duration assignment):
 
 With "Minimize windows into application icon" enabled, Dock bypasses `effectDur` and
-hardcodes a per-effect duration into `d8`, then moves it to `d0` (`fmov d0, d8` on 15,
-`mov v0.16b, v8.16b` on 27) before calling the global animation-duration setter.
+hardcodes a per-effect duration into `d8`, then moves it to `d0` (`fmov d0, d8` on Sequoia,
+`mov v0.16b, v8.16b` on Golden Gate) before calling the global animation-duration setter.
 - `00 1C 21 1E 08 C0 22 1E ?? ?? ?? ?? ?? ?? ?? 97` - Genie (`genie-speed` pref, default 0.5s)
 - `01 10 6A 1E 28 1C 60 1E ?? ?? ?? ?? ?? ?? ?? 97` - Scale (0.25s)
 - `01 10 62 1E 08 1C 61 1E ?? ?? ?? ?? ?? ?? ?? 97` - Suck (0.4s)
@@ -103,15 +101,15 @@ Each minimize-to-app pattern appears twice in Dock (minimize + unminimize logic)
 
 ## Adding New Patterns
 
-1. Add entry to `g_all_patterns[]` in `src/payload.m`:
+1. Add entry to `g_patterns[]` in `src/payload.m`:
    ```c
-   {"XX XX XX XX", offset, "name", FEATURE_*, OS_TARGET, OS_FALLBACK},
+   { .pattern = "XX XX ?? XX", .patch_offset = 4, .name = "name",
+     .feature = FEATURE_*, .os_min = 0, .os_max = 0 },
    ```
-2. Set `patch_offset` (byte offset to the instruction to replace)
-3. Assign correct `feature` flag
-4. Set `os_target` (`OS_SONOMA`, `OS_SEQUOIA`, or `OS_ANY`)
-5. Set `os_fallback` (which OS to try if this pattern's target doesn't match)
-6. Rebuild and test
+2. Set `patch_offset` to the `fmov`/`movi` that writes the duration register (it is replaced
+   with `movi d<Rd>, #0` or `fmov d<Rd>, #0.125`, keeping the original `Rd`)
+3. Wildcard `bl`/`adrp`/branch immediates; verify the pattern matches every Dock slice
+4. Rebuild and test
 
 ## Logs
 
@@ -120,8 +118,10 @@ Each minimize-to-app pattern appears twice in Dock (minimize + unminimize logic)
 
 Expected output shows per-feature breakdown:
 ```
-[instantspaces] Patched [minimize-scale] @0x...: before=0x1e604100 after=0x1e681000
-[instantspaces] Patched breakdown: spaces=2, minimize=4
+[instantspaces] Patched [minimize-to-app-scale] @0x...: 0x1e601c28 -> 0x2f00e408
+[instantspaces] [effectDur] swizzled -[DockBar effectDur]
+[instantspaces] [min-max-space] swizzled -[Spaces prepareWindowForMinMax:duration:]
+[instantspaces] Patched: spaces=1, minimize=8
 ```
 
 ## Version Control

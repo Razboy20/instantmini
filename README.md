@@ -2,11 +2,11 @@
 
 Patches macOS Dock in-process to reduce animation durations for:
 - **Spaces switching** - Desktop/Space transitions
-- **Window minimize/unminimize** - Scale and Shrink effects
+- **Window minimize/unminimize** - Genie, Scale and Suck effects, including "Minimize windows into application icon"
 
 | | |
 |---|---|
-| **macOS** | 14 (Sonoma), 15 (Sequoia) |
+| **macOS** | 14 (Sonoma), 15 (Sequoia), 27 (Golden Gate) |
 | **Arch** | Apple Silicon (arm64e) |
 | **Requires** | SIP disabled, Xcode Command Line Tools |
 
@@ -124,8 +124,8 @@ Expected output:
 [instantspaces] instantspaces_patch started (mode=zero, features=all)
 [instantspaces] Dock __TEXT: 0x... - 0x... (... bytes)
 [instantspaces] Patched [spaces-sequoia] @0x...: 0x... -> 0x2f00e400
-[instantspaces] Patched: spaces=2, minimize=4
-[instantspaces] Total patches applied: 6
+[instantspaces] Patched: spaces=1, minimize=8
+[instantspaces] Total patches applied: 9
 ```
 
 ## Uninstall
