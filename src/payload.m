@@ -14,9 +14,9 @@
 static int g_log_fd = -1;
 static void log_line(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt);
-    { va_list cp; va_copy(cp, ap); char buf[1024]; vsnprintf(buf, sizeof(buf), fmt, cp); va_end(cp); NSLog(@"[instantspaces] %s", buf); }
+    { va_list cp; va_copy(cp, ap); char buf[1024]; vsnprintf(buf, sizeof(buf), fmt, cp); va_end(cp); NSLog(@"[instantmini] %s", buf); }
     if (g_log_fd == -1) {
-        char path[PATH_MAX]; snprintf(path, sizeof(path), "/private/var/tmp/instantspaces.%d.log", getpid());
+        char path[PATH_MAX]; snprintf(path, sizeof(path), "/private/var/tmp/instantmini.%d.log", getpid());
         g_log_fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     }
     if (g_log_fd != -1) { char line[1024]; vsnprintf(line, sizeof(line), fmt, ap); write(g_log_fd, line, (unsigned)strlen(line)); write(g_log_fd, "\n", 1); fsync(g_log_fd); }
@@ -95,9 +95,9 @@ static void record_patched(uint64_t addr){
     }
 }
 
-// Select patch opcode by env var: INSTANTSPACES_MODE = "zero" | "min0125"
+// Select patch opcode by env var: INSTANTMINI_MODE = "zero" | "min0125"
 static uint32_t pick_patch_insn(void){
-    const char *mode = getenv("INSTANTSPACES_MODE");
+    const char *mode = getenv("INSTANTMINI_MODE");
     if (mode && strcmp(mode, "min0125") == 0) {
         // fmov d0, #0.125
         return 0x1e681000;
@@ -141,13 +141,13 @@ static int patch_all_hits_in_text(uint64_t text_start,uint64_t text_size){
     return total_patched;
 }
 
-__attribute__((visibility("default"))) int instantspaces_patch(void){
+__attribute__((visibility("default"))) int instantmini_patch(void){
 #if !defined(__arm64__)
     return 1;
 #else
     @autoreleasepool {
-        const char *mode = getenv("INSTANTSPACES_MODE");
-        log_line("instantspaces_patch: entered (mode=%s)", mode ? mode : "zero");
+        const char *mode = getenv("INSTANTMINI_MODE");
+        log_line("instantmini_patch: entered (mode=%s)", mode ? mode : "zero");
         uint64_t text_start=0, text_size=0;
         if(!find_dock_text(&text_start,&text_size)){ log_line("Failed to find Dock __TEXT; abort."); return 1; }
         log_line("Dock __TEXT=[0x%llx..0x%llx)",(unsigned long long)text_start,(unsigned long long)(text_start+text_size));
@@ -159,7 +159,7 @@ __attribute__((visibility("default"))) int instantspaces_patch(void){
 #endif
 }
 
-__attribute__((visibility("default"))) int instantspaces_verify(void){
+__attribute__((visibility("default"))) int instantmini_verify(void){
 #if !defined(__arm64__)
     return 1;
 #else
@@ -177,5 +177,5 @@ __attribute__((visibility("default"))) int instantspaces_verify(void){
 
 __attribute__((constructor)) static void ctor(void){
     log_line("constructor: payload loaded into Dock pid=%d", getpid());
-    (void)instantspaces_patch();
+    (void)instantmini_patch();
 }

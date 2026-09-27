@@ -4,7 +4,7 @@ set -euo pipefail
 # Config: choose your default mode (zero|min0125)
 MODE="${1:-min0125}"
 
-PAYLOAD="/Library/ScriptingAdditions/instantspaces.osax/Contents/Resources/payload.dylib"
+PAYLOAD="/Library/ScriptingAdditions/instantmini.osax/Contents/Resources/payload.dylib"
 
 # Set a custom process title so it is easy to find/kill via pgrep/pkill
 if command -v exec -a >/dev/null 2>&1; then
@@ -31,12 +31,12 @@ for attempt in $(seq 1 $tries); do
   echo "auto-inject attempt $attempt/$tries (mode=$MODE)"
   /usr/bin/lldb -p "${PID}" -b \
     -o 'settings set target.process.thread.step-out-avoid-nodebug true' \
-    -o "expr (int)setenv(\"INSTANTSPACES_MODE\",\"$MODE\",1)" \
+    -o "expr (int)setenv(\"INSTANTMINI_MODE\",\"$MODE\",1)" \
     -o "expr (void*)dlopen(\"$PAYLOAD\", 2)" \
     -o 'expr (char*)dlerror()' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantspaces_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantspaces_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
-    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *vs = my_dlsym((void*)-2,"instantspaces_verify"); (int)((vs)?((int(*)(void))vs)():-1); }' \
+    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantmini_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
+    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *ps = my_dlsym((void*)-2,"instantmini_patch"); (int)((ps)?((int(*)(void))ps)():-1); }' \
+    -o 'expr -- { void *(*my_dlsym)(void*, const char*) = (void*(*)(void*,const char*))dlsym; void *vs = my_dlsym((void*)-2,"instantmini_verify"); (int)((vs)?((int(*)(void))vs)():-1); }' \
     -o 'process detach' \
     -o 'quit' && {
       echo "auto-inject success"

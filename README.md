@@ -1,4 +1,4 @@
-# instantspaces
+# instantmini
 
 Disable macOS Desktop Spaces switching animation by patching Dock **in-process** with a tiny scripting addition payload. Supports:
 - macOS: 14 (Sonoma) and 15 (Sequoia)
@@ -37,24 +37,24 @@ sudo ./scripts/inject.sh zero
 ```
 
 What the injector does
-- Sets INSTANTSPACES_MODE inside the Dock process
+- Sets INSTANTMINI_MODE inside the Dock process
 - dlopen()s the payload
-- Calls instantspaces_patch() twice in a row
-- Calls instantspaces_verify() to list/confirm patched sites
+- Calls instantmini_patch() twice in a row
+- Calls instantmini_verify() to list/confirm patched sites
 
 Check logs
-- Console.app: filter “Dock” and “[instantspaces]”
-- File log: /private/var/tmp/instantspaces.<DockPID>.log
+- Console.app: filter “Dock” and “[instantmini]”
+- File log: /private/var/tmp/instantmini.<DockPID>.log
 
 You’ll see messages like:
 ```
-[instantspaces] constructor: payload loaded into Dock pid=...
-[instantspaces] instantspaces_patch: entered (mode=min0125)
-[instantspaces] Dock __TEXT=[0x... .. 0x... )
-[instantspaces] Patched site @0x...: before=0x..., after=0x1e681000
-[instantspaces] Total sites patched: 2
-[instantspaces] Verify: patched_count=2
-[instantspaces] Verify patched @0x... => 0x1e681000
+[instantmini] constructor: payload loaded into Dock pid=...
+[instantmini] instantmini_patch: entered (mode=min0125)
+[instantmini] Dock __TEXT=[0x... .. 0x... )
+[instantmini] Patched site @0x...: before=0x..., after=0x1e681000
+[instantmini] Total sites patched: 2
+[instantmini] Verify: patched_count=2
+[instantmini] Verify patched @0x... => 0x1e681000
 ```
 
 ## Modes
@@ -76,7 +76,7 @@ To inject automatically on login (and after Dock relaunches), install a per-user
 
 1) Edit scripts/auto-inject.sh to choose your default mode (zero or min0125). It already retries multiple times.
 2) Copy and adjust the LaunchAgent (update the absolute path to your repo):
-   - In eu.flawn.instantspaces.inject.plist, set the ProgramArguments path to your auto-inject.sh.
+   - In dev.razboy.instantmini.inject.plist, set the ProgramArguments path to your auto-inject.sh.
 3) Install and load:
 
 ```sh
@@ -84,18 +84,18 @@ To inject automatically on login (and after Dock relaunches), install a per-user
 mkdir -p ~/Library/LaunchAgents
 
 # Copy the plist
-cp eu.flawn.instantspaces.inject.plist ~/Library/LaunchAgents/
+cp dev.razboy.instantmini.inject.plist ~/Library/LaunchAgents/
 
 # Load (for the current user session)
-launchctl bootstrap gui/$UID ~/Library/LaunchAgents/eu.flawn.instantspaces.inject.plist
-launchctl enable gui/$UID/eu.flawn.instantspaces.inject
-launchctl kickstart -k gui/$UID/eu.flawn.instantspaces.inject
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/dev.razboy.instantmini.inject.plist
+launchctl enable gui/$UID/dev.razboy.instantmini.inject
+launchctl kickstart -k gui/$UID/dev.razboy.instantmini.inject
 ```
 
 To unload/disable:
 ```sh
-launchctl bootout gui/$UID ~/Library/LaunchAgents/eu.flawn.instantspaces.inject.plist
-launchctl disable gui/$UID/eu.flawn.instantspaces.inject
+launchctl bootout gui/$UID ~/Library/LaunchAgents/dev.razboy.instantmini.inject.plist
+launchctl disable gui/$UID/dev.razboy.instantmini.inject
 ```
 
 Notes
@@ -106,8 +106,8 @@ Notes
 
 ```sh
 # Optional: unload agent if installed
-launchctl bootout gui/$UID ~/Library/LaunchAgents/eu.flawn.instantspaces.inject.plist 2>/dev/null || true
-rm -f ~/Library/LaunchAgents/eu.flawn.instantspaces.inject.plist
+launchctl bootout gui/$UID ~/Library/LaunchAgents/dev.razboy.instantmini.inject.plist 2>/dev/null || true
+rm -f ~/Library/LaunchAgents/dev.razboy.instantmini.inject.plist
 
 # Remove the osax payload
 ./scripts/uninstall.sh

@@ -3,11 +3,11 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>eu.flawn.instantspaces.inject</string>
+    <string>dev.razboy.instantmini.inject</string>
 
     <key>ProgramArguments</key>
     <array>
-      <string>/Users/flawn/Documents/Projects/instantspaces/scripts/auto-inject.sh</string>
+      <string>/Users/flawn/Documents/Projects/instantmini/scripts/auto-inject.sh</string>
       <string>min0125</string>
     </array>
 
@@ -36,8 +36,8 @@
 
     <!-- [AI] Optional: log paths for debugging -->
     <key>StandardOutPath</key>
-    <string>/Users/flawn/Library/Logs/instantspaces.auto-inject.out.log</string>
+    <string>/Users/flawn/Library/Logs/instantmini.auto-inject.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/flawn/Library/Logs/instantspaces.auto-inject.err.log</string>
+    <string>/Users/flawn/Library/Logs/instantmini.auto-inject.err.log</string>
   </dict>
 </plist>
