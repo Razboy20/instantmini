@@ -1,9 +1,9 @@
 # instantmini
 
-Patches macOS Dock in-process to reduce animation durations for:
+Patches macOS Dock in-process to remove animation durations for:
 
-- **Spaces switching** - Desktop/Space transitions
-- **Window minimize/unminimize** - Genie, Scale and Suck effects, including "Minimize windows into application icon"
+- **Window minimize/unminimize**
+- **Spaces switching**
 
 |              |                                        |
 | ------------ | -------------------------------------- |
